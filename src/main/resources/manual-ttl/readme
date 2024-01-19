@@ -1,0 +1,6 @@
+ttl_list es la lista de colecciones y TTLs que debe leer la clase com.bs.predictiveservices.commons.mongodb.collection.ttl.ManualTtl
+para eliminar los documentos mas antiguos a lo indicado en el propio tt_list.
+
+Cada linea representa una coleccion a comprobar, donde los campos estan separados por espacios y representan lo siguiente:
+
+[base de datos] [coleccion] [campo a usar para el TTL] [antiguedad en dias]

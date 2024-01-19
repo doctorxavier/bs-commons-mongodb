@@ -1,0 +1,3 @@
+hadwrk08p       27017   /disk1/mongodb/bsabadell        /disk1/mongodb/logs/repl.log    /disk1/mongodb/key-file	set3
+hadwrk08p       27029   /disk2/mongodb/arbiter        /disk2/mongodb/logs/repl-arbiter.log    /disk2/mongodb/key-file set6
+hadwrk08p       27027   /disk2/mongodb/bsabadell        /disk2/mongodb/logs/repl.log    /disk2/mongodb/key-file set7

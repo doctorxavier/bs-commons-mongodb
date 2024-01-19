@@ -1,0 +1,2 @@
+hadmae1p	27017	/var/log/mongodb/logs/mongos.log	/usr/lib/boostingtools/mongodb/config/key-file
+hadmae2p        27017   /var/log/mongodb/logs/mongos.log        /usr/lib/boostingtools/mongodb/config/key-file

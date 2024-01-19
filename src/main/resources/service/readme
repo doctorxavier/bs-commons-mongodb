@@ -1,0 +1,25 @@
+Esta carpeta contiene:
+
+*bin: el script de servicio instalado en el cluster.
+*config: la configuracion del servicio. Hay un directorio por maquina del cluster con su configuracion correspondiente.
+*key-file: clave para conectar las instancias entre ellas.
+
+Para realizar cambios en el script o en la configuracion en alguna de las maquinas se tiene que reemplazar los ficheros 
+siguiendo la siguiente estructura en el sistema de ficheros de Linux:
+
+/usr
+  |- lib
+      |- boostingtools
+              |- mongodb
+                   |- bin
+                   |   |-mongodb
+                   |
+                   |- config
+                        |- config-servers
+                        |- replica-sets
+                        |- mongos
+                       
+                       
+La documentacion correspondiente a este servicio se puede encontrar en:
+
+https://quark.everis.com/confluence/display/BIGDATA/Mantenimiento

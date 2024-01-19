@@ -1,0 +1,244 @@
+#! /bin/bash
+# chkconfig: 345 95 20
+# description: MongoDB script for administration.
+# start, stop, restart and status for MongoDB
+# processname: mongodb
+
+CONFIG_DIR=/usr/lib/boostingtools/mongodb/config
+MONGOS_CONFIG=$CONFIG_DIR/mongos
+REPLICA_SET_CONFIG=$CONFIG_DIR/replica-sets
+CONFIG_SERVERS_CONFIG=$CONFIG_DIR/config-servers
+
+START_OPTION="start"
+STOP_OPTION="stop"
+RESTART_OPTION="restart"
+FIX_OPTION="fix"
+STATUS_OPTION="status"
+
+function status_mongos() {
+	echo "Checking mongos..."
+	for line in `cat $MONGOS_CONFIG`; do
+		node="`echo $line | awk '{print $1}'`"
+		port="`echo $line | awk '{print $2}'`"
+		config_log="`echo $line | awk '{print $3}'`"
+		results="`ssh $node "ps aux | grep mongos | grep $port | grep $config_log | grep -v grep"`"
+		if [ "$results" != "" ]; then
+			user="`echo $results | awk '{print $1}'`"
+			pid="`echo $results | awk '{print $2}'`"
+			echo " + $node: mongos is up with pid $pid by $user."
+		else
+			echo " - $node: mongos is down."
+		fi
+	done
+}
+
+function status_configs() {
+	echo "Checking config servers..."
+	for line in `cat $CONFIG_SERVERS_CONFIG`; do
+		node="`echo $line | awk '{print $1}'`"
+		port="`echo $line | awk '{print $2}'`"
+		config_db="`echo $line | awk '{print $3}'`"
+		config_log="`echo $line | awk '{print $4}'`"
+		results="`ssh $node "ps aux | grep mongod | grep configsvr | grep $port | grep $config_db | grep $config_log | grep -v grep"`"
+		if [ "$results" != "" ]; then
+			user="`echo $results | awk '{print $1}'`"
+			pid="`echo $results | awk '{print $2}'`"
+			echo " + $node: mongo config server is up with pid $pid by $user. Listening port $port, database location in $config_db and logs in $config_log."
+		else
+			echo " - $node: mongo config server is down. Listening port $port, database location in $config_db and logs in $config_log."
+		fi		
+	done
+}
+
+function status_replicas() {
+	for replica_set in `cat $REPLICA_SET_CONFIG | awk '{print $6}' | uniq`; do
+		echo "Checking replica set $replica_set..."
+		for line in `cat $REPLICA_SET_CONFIG | grep $replica_set`; do
+			node="`echo $line | awk '{print $1}'`"
+			port="`echo $line | awk '{print $2}'`"
+			config_db="`echo $line | awk '{print $3}'`"
+			config_log="`echo $line | awk '{print $4}'`"
+			results="`ssh $node "ps aux | grep mongod | grep shardsvr | grep $port | grep $config_db | grep $config_log | grep -v grep"`"
+			if [ "$results" != "" ]; then
+				user="`echo $results | awk '{print $1}'`"
+				pid="`echo $results | awk '{print $2}'`"
+				echo " + $node: sharded mongo server is up with pid $pid by $user. Listening port $port, database location in $config_db and logs in $config_log."
+			else
+				echo " - $node: sharded mongo server is down. Listening port $port, database location in $config_db and logs in $config_log."
+			fi
+		done
+	done
+}
+
+function start_replicas() {
+	for replica_set in `cat $REPLICA_SET_CONFIG | awk '{print $6}' | uniq`; do
+		echo "Launching replica set $replica_set..."
+		for line in `cat $REPLICA_SET_CONFIG | grep $replica_set`; do
+			node="`echo $line | awk '{print $1}'`"
+			port="`echo $line | awk '{print $2}'`"
+			config_db="`echo $line | awk '{print $3}'`"
+			config_log="`echo $line | awk '{print $4}'`"
+			key_file="`echo $line | awk '{print $5}'`"
+			ssh $node "numactl --interleave all mongod --fork --logpath $config_log --shardsvr --setParameter ttlMonitorEnabled=false --dbpath $config_db --port $port --replSet $replica_set --keyFile $key_file" > /dev/null 2>&1
+			if [ "$?" == "0" ]; then
+				echo " + mongod at $node:$port launched succesfully."
+			else
+				echo " - mongod at $node:$port not launched."
+			fi
+		done
+	done
+}
+
+function start_configs() {
+	echo "Launching config servers..."
+	for line in `cat $CONFIG_SERVERS_CONFIG`; do
+		node="`echo $line | awk '{print $1}'`"
+		port="`echo $line | awk '{print $2}'`"
+		config_db="`echo $line | awk '{print $3}'`"
+		config_log="`echo $line | awk '{print $4}'`"
+		key_file="`echo $line | awk '{print $5}'`"
+		ssh $node "numactl --interleave all mongod --fork --logpath $config_log --configsvr --dbpath $config_db --port $port --keyFile $key_file" > /dev/null 2>&1
+		if [ "$?" == "0" ]; then
+			echo " + mongod config server at $node:$port launched succesfully."
+		else
+			echo " - mongod config server at $node:$port not launched."
+		fi
+	done
+}
+
+function start_mongos() {
+	echo "Launching mongos..."
+	config_servers=""
+	for line in `cat $CONFIG_SERVERS_CONFIG`; do
+		node="`echo $line | awk '{print $1}'`"
+		port="`echo $line | awk '{print $2}'`"
+		if [ "$config_servers" != "" ]; then
+			config_servers="$config_servers,$node:$port"
+		else
+			config_servers="$node:$port"
+		fi
+	done
+	for line in `cat $MONGOS_CONFIG`; do
+		node="`echo $line | awk '{print $1}'`"
+		port="`echo $line | awk '{print $2}'`"
+		config_log="`echo $line | awk '{print $3}'`"
+		key_file="`echo $line | awk '{print $4}'`"
+		if [ "$config_servers" != "" ]; then
+			ssh $node "mongos --fork --logpath $config_log --configdb $config_servers --port $port --keyFile $key_file" > /dev/null 2>&1
+			if [ "$?" == "0" ]; then
+				echo " + mongos server at $node:$port launched succesfully."
+			else
+				echo " - mongos server at $node:$port not launched."
+			fi
+		fi
+	done
+}
+
+function stop_mongos() {
+	echo "Stopping mongos..."
+	for line in `cat $MONGOS_CONFIG`; do
+		node="`echo $line | awk '{print $1}'`"
+		port="`echo $line | awk '{print $2}'`"
+		config_log="`echo $line | awk '{print $3}'`"
+		results="`ssh $node "ps aux | grep mongos | grep $port | grep $config_log | grep -v grep"`"
+		if [ "$results" != "" ]; then
+			pid="`echo $results | awk '{print $2}'`"
+			ssh $node "kill $pid"
+			if [ "$?" == "0" ]; then
+				echo " + mongos server at $node:$port stopped succesfully."
+			else
+				echo " - mongos server at $node:$port not stopped."
+			fi
+		else
+			echo " - mongos already down at $node."
+		fi
+	done
+}
+
+function stop_configs() {
+	echo "Stopping config servers..."
+	for line in `cat $CONFIG_SERVERS_CONFIG`; do
+		node="`echo $line | awk '{print $1}'`"
+		port="`echo $line | awk '{print $2}'`"
+		config_db="`echo $line | awk '{print $3}'`"
+		config_log="`echo $line | awk '{print $4}'`"
+		results="`ssh $node "ps aux | grep mongod | grep configsvr | grep $port | grep $config_db | grep $config_log | grep -v grep"`"
+		if [ "$results" != "" ]; then
+			pid="`echo $results | awk '{print $2}'`"
+			ssh $node "kill $pid"
+			if [ "$?" == "0" ]; then
+				echo " + mongos server at $node:$port stopped succesfully."
+			else
+				echo " - mongos server at $node:$port not stopped."
+			fi
+		else
+			echo " - $node: mongo config server is already stopped. Listening port $port, database location in $config_db and logs in $config_log."
+		fi		
+	done
+}
+
+function stop_replicas() {
+	for replica_set in `cat $REPLICA_SET_CONFIG | awk '{print $6}' | uniq`; do
+		echo "Stopping replica set $replica_set..."
+		for line in `cat $REPLICA_SET_CONFIG | grep $replica_set`; do
+			node="`echo $line | awk '{print $1}'`"
+			port="`echo $line | awk '{print $2}'`"
+			config_db="`echo $line | awk '{print $3}'`"
+			config_log="`echo $line | awk '{print $4}'`"
+			results="`ssh $node "ps aux | grep mongod | grep shardsvr | grep $port | grep $config_db | grep $config_log | grep -v grep"`"
+			if [ "$results" != "" ]; then
+				pid="`echo $results | awk '{print $2}'`"
+				ssh $node "kill $pid"
+				if [ "$?" == "0" ]; then
+					echo " + mongod server at $node:$port stopped succesfully."
+				else
+					echo " - mongod server at $node:$port not stopped."
+				fi
+			else
+				echo " - $node: sharded mongo server is down. Listening port $port, database location in $config_db and logs in $config_log."
+			fi
+		done
+	done
+}
+	
+case "$1" in
+	start)
+		OPTION=$START_OPTION
+		shift
+		;;
+	stop)
+		OPTION=$STOP_OPTION
+		shift
+		;;
+	restart)
+		OPTION=$RESTART_OPTION
+		shift
+		;;
+	status)
+		OPTION=$STATUS_OPTION
+		shift
+		;;
+esac
+
+(IFS='
+'
+if [ "$OPTION" == "$STATUS_OPTION" ]; then
+	status_mongos
+	status_configs
+	status_replicas
+elif [ "$OPTION" == "$START_OPTION" ]; then
+	start_replicas
+	start_configs
+	start_mongos
+elif [ "$OPTION" == "$STOP_OPTION" ]; then
+	stop_mongos
+	stop_configs
+	stop_replicas
+elif [ "$OPTION" == "$RESTART_OPTION" ]; then
+	stop_mongos
+	stop_configs
+	stop_replicas
+	start_replicas
+	start_configs
+	start_mongos
+fi)
